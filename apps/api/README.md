@@ -33,7 +33,10 @@ uv run fastapi run app/main.py
 
 The server starts on http://localhost:8000.
 
+Set `ENV=production` to mark the `guest_id` cookie as `Secure` (HTTPS only).
+
 - `GET /` → `{"message": "Hello World"}`
+- `GET /whoami` → `{"guest_id": "<uuid>"}`. Issues an httponly `guest_id` cookie if missing.
 - Interactive API docs: http://localhost:8000/docs
 
 ## Managing dependencies
