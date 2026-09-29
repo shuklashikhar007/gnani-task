@@ -1,12 +1,12 @@
-import os
 import uuid
 from typing import Annotated
 
 from fastapi import Depends, Request, Response
 
+from app.config import settings
+
 GUEST_COOKIE = "guest_id"
 GUEST_COOKIE_MAX_AGE = 60 * 60 * 24 * 365  # 1 year
-IS_PROD = os.getenv("ENV") == "production"
 
 
 def get_guest_id(request: Request, response: Response) -> str:
@@ -24,7 +24,7 @@ def get_guest_id(request: Request, response: Response) -> str:
         max_age=GUEST_COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
-        secure=IS_PROD,
+        secure=settings.is_prod,
     )
     return guest_id
 
