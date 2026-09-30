@@ -1,6 +1,9 @@
 // Typed client for the recordings API. Requests go through the Next.js /api rewrite.
 
-export type RecordingStatus = "pending_upload" | "uploaded" | "failed";
+export type RecordingStatus = "pending_upload" | "uploaded" | "transcribing" | "transcribed" | "failed";
+
+/** Statuses the recording will still move on from; the UI keeps polling while any are present. */
+export const UNFINISHED_STATUSES: RecordingStatus[] = ["pending_upload", "uploaded", "transcribing"];
 
 export interface Recording {
     id: string;
@@ -15,6 +18,27 @@ export interface Recording {
     created_at: string;
     updated_at: string;
     uploaded_at: string | null;
+    language_code: string;
+    duration_seconds: number | null;
+    transcription_mode: "sync" | "batch" | null;
+    /** Latest Gnani batch job status (CREATED, QUEUED, IN_PROGRESS, ...), shown as progress. */
+    gnani_status: string | null;
+    /** Transient failures so far; above 0 means the worker is retrying. */
+    attempts: number;
+    processing_started_at: string | null;
+    transcribed_at: string | null;
+}
+
+export interface Segment {
+    start_time: number;
+    end_time: number;
+    text: string;
+    speaker_id?: string | null;
+}
+
+export interface RecordingDetail extends Recording {
+    transcript: string | null;
+    segments: Segment[] | null;
 }
 
 export interface PresignedParts {
@@ -75,19 +99,25 @@ async function request<T>(path: string, method = "GET", json?: unknown): Promise
 }
 
 export const api = {
-    createRecording: (file: File) =>
+    createRecording: (file: File, languageCode: string) =>
         request<Recording>("/recordings", "POST", {
             filename: file.name,
             size_bytes: file.size,
             content_type: file.type,
             last_modified: file.lastModified,
+            language_code: languageCode,
         }),
     listRecordings: () => request<Recording[]>("/recordings"),
-    getRecording: (id: string) => request<Recording>(`/recordings/${id}`),
+    /** Like listRecordings, but first advances any transcription work that's due (this drives processing). */
+    refreshRecordings: () => request<Recording[]>("/recordings/refresh", "POST"),
+    /** One recording with its transcript, after advancing any work that's due. */
+    refreshRecording: (id: string) => request<RecordingDetail>(`/recordings/${id}/refresh`, "POST"),
+    getRecording: (id: string) => request<RecordingDetail>(`/recordings/${id}`),
     presignParts: (id: string, partNumbers: number[]) =>
         request<PresignedParts>(`/recordings/${id}/parts`, "POST", { part_numbers: partNumbers }),
     getUploadedParts: (id: string) => request<UploadProgress>(`/recordings/${id}/parts`),
     completeUpload: (id: string) => request<Recording>(`/recordings/${id}/complete`, "POST"),
+    retryRecording: (id: string) => request<Recording>(`/recordings/${id}/retry`, "POST"),
     deleteRecording: (id: string) => request<void>(`/recordings/${id}`, "DELETE"),
 };
 

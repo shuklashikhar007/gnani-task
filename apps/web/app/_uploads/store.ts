@@ -3,6 +3,7 @@
 import { create } from "zustand";
 
 import { api, type Recording } from "@/app/_uploads/api";
+import { DEFAULT_LANGUAGE } from "@/app/_uploads/languages";
 import { ACTIVE_STATES, Uploader, type UploadSnapshot } from "@/app/_uploads/uploader";
 
 // The upload engine isn't React state; the store only mirrors its snapshots.
@@ -15,9 +16,13 @@ interface UploadsState {
     pendingBytes: Record<string, number>;
     error: string | null;
     upload: UploadSnapshot | null;
+    /** Language for the next upload. */
+    language: string;
 
     loadRecordings: () => Promise<void>;
     deleteRecording: (rec: Recording) => Promise<void>;
+    retryRecording: (rec: Recording) => Promise<void>;
+    setLanguage: (language: string) => void;
     startUpload: (file: File) => void;
     pause: () => void;
     resume: () => void;
@@ -34,10 +39,12 @@ export const useUploads = create<UploadsState>()((set, get) => ({
     pendingBytes: {},
     error: null,
     upload: null,
+    language: DEFAULT_LANGUAGE,
 
     loadRecordings: async () => {
         try {
-            const recordings = await api.listRecordings();
+            // Refresh, not just list: each poll also moves due transcriptions forward on the server.
+            const recordings = await api.refreshRecordings();
             set({ recordings, error: null });
             // The live upload reports its own progress; ask R2 only about the others.
             const activeId = activeRecordingId(get());
@@ -65,17 +72,32 @@ export const useUploads = create<UploadsState>()((set, get) => ({
         await get().loadRecordings();
     },
 
+    retryRecording: async (rec) => {
+        try {
+            await api.retryRecording(rec.id);
+        } catch (err) {
+            set({ error: err instanceof Error ? err.message : "Couldn't retry it." });
+        }
+        await get().loadRecordings();
+    },
+
+    setLanguage: (language) => set({ language }),
+
     startUpload: (file) => {
         if (isUploading(get())) return;
-        const current: Uploader = new Uploader(file, (snapshot) => {
-            if (uploader !== current) return; // a dismissed upload's late events
-            const prev = get().upload;
-            set({ upload: snapshot });
-            // Refresh the list when the upload changes state or gets its recording.
-            if (prev?.state !== snapshot.state || prev?.recording?.id !== snapshot.recording?.id) {
-                void get().loadRecordings();
-            }
-        });
+        const current: Uploader = new Uploader(
+            file,
+            (snapshot) => {
+                if (uploader !== current) return; // a dismissed upload's late events
+                const prev = get().upload;
+                set({ upload: snapshot });
+                // Refresh the list when the upload changes state or gets its recording.
+                if (prev?.state !== snapshot.state || prev?.recording?.id !== snapshot.recording?.id) {
+                    void get().loadRecordings();
+                }
+            },
+            get().language,
+        );
         uploader = current;
         void current.start();
     },

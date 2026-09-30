@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { isSameFile, type Recording } from "@/app/_uploads/api";
-import { formatBytes, formatDate } from "@/app/_utils/format";
+import { isSameFile, type Recording, UNFINISHED_STATUSES } from "@/app/_uploads/api";
+import { audioDetails, canRetry, elapsedText, processingStage } from "@/app/_uploads/processing";
 import StatusBadge from "@/app/_uploads/status-badge";
 import { activeRecordingId, isUploading, useUploads } from "@/app/_uploads/store";
+import { formatBytes, formatDate } from "@/app/_utils/format";
+import { useNow } from "@/app/_utils/use-now";
 
 const POLL_MS = 5000;
 
@@ -15,19 +18,20 @@ export default function RecordingsList() {
     const error = useUploads((s) => s.error);
     const activeId = useUploads(activeRecordingId);
     const uploadActive = useUploads(isUploading);
-    const { loadRecordings, startUpload, deleteRecording } = useUploads.getState();
-    const hasPending = recordings?.some((r) => r.status === "pending_upload") ?? false;
+    const { loadRecordings, startUpload, deleteRecording, retryRecording } = useUploads.getState();
+    const hasUnfinished = recordings?.some((r) => UNFINISHED_STATUSES.includes(r.status)) ?? false;
+    const now = useNow(recordings?.some((r) => r.status === "transcribing") ?? false);
 
     useEffect(() => {
         void loadRecordings();
     }, [loadRecordings]);
 
-    // Poll while anything is unfinished, so status changes show up without a refresh.
+    // Poll while anything is unfinished. Each poll also advances due transcriptions on the server (no worker).
     useEffect(() => {
-        if (!hasPending) return;
+        if (!hasUnfinished) return;
         const timer = setInterval(() => void loadRecordings(), POLL_MS);
         return () => clearInterval(timer);
-    }, [hasPending, loadRecordings]);
+    }, [hasUnfinished, loadRecordings]);
 
     const remove = (rec: Recording) => {
         if (window.confirm(`Delete "${rec.filename}"?`)) void deleteRecording(rec);
@@ -62,19 +66,35 @@ export default function RecordingsList() {
             {recordings === null && !error && <p className="text-sm text-zinc-500">Loading…</p>}
             {recordings?.length === 0 && <p className="text-sm text-zinc-500">No uploads yet.</p>}
 
-            <ul className="divide-y divide-zinc-200 rounded-xl border border-zinc-200">
+            <ul className="divide-y rounded-xl border border-zinc-200">
                 {recordings?.map((rec) => {
                     const isActive = rec.id === activeId;
                     const stored = pendingBytes[rec.id];
+                    const stage = processingStage(rec);
+                    const elapsed = elapsedText(rec, now);
+                    const hasFile = rec.uploaded_at !== null;
                     return (
                         <li key={rec.id} className="flex flex-col gap-1 p-4">
                             <div className="flex items-center justify-between gap-3">
-                                <p className="truncate font-medium">{rec.filename}</p>
+                                {hasFile ? (
+                                    <Link href={`/recordings/${rec.id}`} className="truncate font-medium hover:underline">
+                                        {rec.filename}
+                                    </Link>
+                                ) : (
+                                    <p className="truncate font-medium">{rec.filename}</p>
+                                )}
                                 <StatusBadge status={rec.status} />
                             </div>
                             <p className="text-sm text-zinc-500">
-                                {formatBytes(rec.size_bytes)} · {formatDate(rec.created_at)}
+                                {formatBytes(rec.size_bytes)} · {formatDate(rec.created_at)} · {audioDetails(rec)}
                             </p>
+
+                            {stage && (
+                                <p className="text-sm text-blue-700" aria-live="polite">
+                                    {stage}
+                                    {elapsed && <span className="text-zinc-500"> · {elapsed}</span>}
+                                </p>
+                            )}
 
                             {rec.status === "pending_upload" && !isActive && (
                                 <p className="text-sm text-amber-700">
@@ -86,6 +106,20 @@ export default function RecordingsList() {
                             {rec.status === "failed" && rec.error && <p className="text-sm text-red-600">{rec.error}</p>}
 
                             <div className="mt-1 flex gap-3 text-sm">
+                                {rec.status === "transcribed" && (
+                                    <Link href={`/recordings/${rec.id}`} className="font-medium text-blue-700 hover:underline">
+                                        View transcript
+                                    </Link>
+                                )}
+                                {canRetry(rec) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => void retryRecording(rec)}
+                                        className="font-medium text-blue-700 hover:underline"
+                                    >
+                                        Retry
+                                    </button>
+                                )}
                                 {rec.status === "pending_upload" && !isActive && (
                                     <button
                                         type="button"

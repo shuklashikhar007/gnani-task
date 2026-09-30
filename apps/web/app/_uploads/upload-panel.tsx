@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatBytes } from "@/app/_utils/format";
+import { LANGUAGES } from "@/app/_uploads/languages";
 import { isUploading, useUploads } from "@/app/_uploads/store";
 
 const ACCEPT = ".wav,.mp3,.mp4,.flac,.ogg,.opus,.m4a,.aac,.webm,.amr,audio/*";
@@ -11,6 +12,8 @@ export default function UploadPanel() {
     const active = useUploads(isUploading);
     const startUpload = useUploads((s) => s.startUpload);
     const hasUpload = useUploads((s) => s.upload !== null);
+    const language = useUploads((s) => s.language);
+    const setLanguage = useUploads((s) => s.setLanguage);
     const inputRef = useRef<HTMLInputElement>(null);
     const [dragging, setDragging] = useState(false);
 
@@ -47,14 +50,31 @@ export default function UploadPanel() {
             >
                 <p className="font-medium">Drop an audio file here</p>
                 <p className="text-sm text-zinc-500">WAV, MP3, M4A, FLAC, OGG, AAC, WebM… up to 2 GB</p>
-                <button
-                    type="button"
-                    disabled={active}
-                    onClick={() => inputRef.current?.click()}
-                    className="mt-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    Choose file
-                </button>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-zinc-600">
+                        Spoken language
+                        <select
+                            value={language}
+                            disabled={active}
+                            onChange={(e) => setLanguage(e.target.value)}
+                            className="rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 disabled:opacity-50"
+                        >
+                            {LANGUAGES.map((l) => (
+                                <option key={l.code} value={l.code}>
+                                    {l.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <button
+                        type="button"
+                        disabled={active}
+                        onClick={() => inputRef.current?.click()}
+                        className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Choose file
+                    </button>
+                </div>
                 <input
                     ref={inputRef}
                     type="file"

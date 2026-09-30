@@ -61,6 +61,8 @@ export class Uploader {
     constructor(
         private readonly file: File,
         private readonly onChange: (snapshot: UploadSnapshot) => void,
+        /** Used only for a new recording; a resumed one keeps the language it was created with. */
+        private readonly languageCode: string,
     ) {}
 
     // ---- public controls ----
@@ -145,7 +147,7 @@ export class Uploader {
                 return;
             }
         }
-        this.rec = await api.createRecording(this.file);
+        this.rec = await api.createRecording(this.file, this.languageCode);
         for (let n = 1; n <= this.rec.part_count; n++) this.queue.push(n);
     }
 
@@ -160,7 +162,7 @@ export class Uploader {
                 await Promise.all(Array.from({ length: CONCURRENCY }, () => this.worker(id)));
                 if (id !== this.runId) return;
 
-                this.set("completing", "Finishing upload…");
+                this.set("completing", "Finishing upload and starting transcription…");
                 const missing = await this.complete(id);
                 if (id !== this.runId) return;
                 if (missing.length === 0) {
@@ -236,7 +238,7 @@ export class Uploader {
                 }
                 if (!isRetryable(err)) throw err;
                 failures = await this.backoff(failures, id);
-                if (id === this.runId) this.set("completing", "Finishing upload…");
+                if (id === this.runId) this.set("completing", "Finishing upload and starting transcription…");
             }
         }
         return [];
