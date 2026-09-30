@@ -23,7 +23,11 @@ Copy the example env file and adjust it if needed:
 cp .example.env .env
 ```
 
-The API expects Postgres to be running. Start it from the repo root with `docker compose up -d --wait`.
+The API expects Postgres to be running. Start it from the repo root with `docker compose up -d --wait`. Then create the tables:
+
+```bash
+uv run alembic upgrade head
+```
 
 ## Run
 
@@ -41,15 +45,22 @@ uv run fastapi run app/main.py
 
 The server starts on http://localhost:8000.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ENV` | `development` | `production` marks the `guest_id` cookie as `Secure` (HTTPS only) |
-| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/audio_notes` | Postgres connection (SQLAlchemy + psycopg 3) |
+| Variable                                    | Default                                                             | Purpose                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `ENV`                                       | `development`                                                       | `production` marks the `guest_id` cookie as `Secure` (HTTPS only) |
+| `DATABASE_URL`                              | `postgresql+psycopg://postgres:postgres@localhost:5432/audio_notes` | Postgres connection (SQLAlchemy + psycopg 3)                      |
+| `R2_ACCOUNT_ID`                             |                                                                     | Cloudflare account ID                                             |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` |                                                                     | R2 API token with Object Read & Write                             |
+| `R2_BUCKET`                                 |                                                                     | Bucket that holds uploaded audio                                  |
+| `MAX_UPLOAD_BYTES`                          | `2147483648` (2 GiB)                                                | Largest file accepted                                             |
+| `UPLOAD_STALE_HOURS`                        | `24`                                                                | Unfinished uploads idle this long are aborted and marked `failed` |
 
-- `GET /` → `{"message": "Hello World"}`
-- `GET /health` → `{"status": "ok", "database": "ok"}`, or 503 if Postgres is unreachable
-- `GET /whoami` → `{"guest_id": "<uuid>"}`. Issues an httponly `guest_id` cookie if missing.
-- Interactive API docs: http://localhost:8000/docs
+## Database migrations
+
+```bash
+uv run alembic upgrade head                            # apply migrations
+uv run alembic revision --autogenerate -m "message"    # after changing models
+```
 
 ## Managing dependencies
 
