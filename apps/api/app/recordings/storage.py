@@ -94,3 +94,13 @@ def head_size(key: str) -> int | None:
 
 def delete(key: str) -> None:
     _client().delete_object(Bucket=settings.r2_bucket, Key=key)
+
+
+def presign_get(key: str, expires: int = 3600) -> str:
+    return _client().generate_presigned_url(
+        "get_object", Params={"Bucket": settings.r2_bucket, "Key": key}, ExpiresIn=expires
+    )
+
+
+def read_bytes(key: str) -> bytes:
+    return _client().get_object(Bucket=settings.r2_bucket, Key=key)["Body"].read()

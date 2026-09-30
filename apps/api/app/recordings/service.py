@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.transcription import gnani, pipeline
+from app.transcription.languages import LANGUAGES
 
 from . import storage
 from .models import Recording, RecordingStatus
@@ -53,8 +55,16 @@ def _resolve_content_type(ext: str, content_type: str) -> str:
 
 
 def create_recording(
-    db: Session, guest_id: str, filename: str, size_bytes: int, content_type: str, last_modified: int
+    db: Session,
+    guest_id: str,
+    filename: str,
+    size_bytes: int,
+    content_type: str,
+    last_modified: int,
+    language_code: str = "en-IN",
 ) -> Recording:
+    if language_code not in LANGUAGES:
+        raise UploadError(f"Unsupported language '{language_code}'.")
     ext = PurePath(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         allowed = ", ".join(sorted(e.lstrip(".") for e in ALLOWED_EXTENSIONS))
@@ -78,6 +88,7 @@ def create_recording(
         part_size=part_size,
         part_count=math.ceil(size_bytes / part_size),
         status=RecordingStatus.PENDING_UPLOAD,
+        language_code=language_code,
     )
     rec.upload_id = storage.create_multipart(rec.storage_key, content_type)
     db.add(rec)
@@ -153,12 +164,16 @@ def _mark_uploaded(db: Session, rec: Recording) -> Recording:
     rec.upload_id = None
     rec.uploaded_at = datetime.now(UTC)
     db.commit()
+    # Start transcribing now, in this request: quick audio comes back transcribed; long audio gets its
+    # batch job created (so Gnani's webhook can finish it even if the user closes the tab).
+    pipeline.advance(db, rec.id)
     return rec
 
 
 def complete_upload(db: Session, rec: Recording) -> Recording:
     """Finalize using R2's own list of parts. Safe to call more than once."""
-    if rec.status == RecordingStatus.UPLOADED:
+    if rec.uploaded_at is not None:
+        # Already finished (and maybe already being transcribed): a retried request succeeds.
         return rec
     upload_id = _require_pending(rec)
 
@@ -196,7 +211,30 @@ def complete_upload(db: Session, rec: Recording) -> Recording:
     return _mark_uploaded(db, rec)
 
 
+def retry_transcription(db: Session, rec: Recording) -> Recording:
+    """Queue a failed recording for transcription again. Only possible if its file was uploaded."""
+    if rec.status != RecordingStatus.FAILED or rec.uploaded_at is None:
+        raise UploadError("Only a failed recording whose upload finished can be retried.", 409)
+    rec.status = RecordingStatus.UPLOADED
+    rec.error = None
+    rec.transcription_mode = None
+    rec.gnani_job_id = None
+    rec.gnani_status = None
+    rec.processing_started_at = None
+    rec.next_poll_at = None
+    rec.attempts = 0
+    rec.locked_until = None
+    db.commit()
+    pipeline.advance(db, rec.id)
+    return rec
+
+
 def delete_recording(db: Session, rec: Recording) -> None:
+    if rec.status == RecordingStatus.TRANSCRIBING and rec.gnani_job_id:
+        try:
+            gnani.cancel_job(rec.gnani_job_id)
+        except gnani.GnaniError:
+            pass  # best effort: the job's result is simply never collected
     if rec.upload_id:
         storage.abort_multipart(rec.storage_key, rec.upload_id)
     storage.delete(rec.storage_key)  # no-op if the object doesn't exist
@@ -204,16 +242,29 @@ def delete_recording(db: Session, rec: Recording) -> None:
     db.commit()
 
 
-def sweep_stale_uploads(db: Session) -> int:
+def sweep_stale_uploads(db: Session, guest_id: str | None = None) -> int:
     """Abort uploads with no activity for `upload_stale_hours` and mark them failed."""
     cutoff = datetime.now(UTC) - timedelta(hours=settings.upload_stale_hours)
-    stale = db.scalars(
-        select(Recording).where(
-            Recording.status == RecordingStatus.PENDING_UPLOAD, Recording.updated_at < cutoff
-        )
-    ).all()
+    stmt = select(Recording).where(Recording.status == RecordingStatus.PENDING_UPLOAD, Recording.updated_at < cutoff)
+    if guest_id is not None:
+        stmt = stmt.where(Recording.guest_id == uuid.UUID(guest_id))
+    stale = db.scalars(stmt).all()
     for rec in stale:
         if rec.upload_id:
             storage.abort_multipart(rec.storage_key, rec.upload_id)
         _fail(db, rec, "Upload was abandoned before finishing.")
     return len(stale)
+
+
+def refresh(db: Session, guest_id: str) -> list[Recording]:
+    """Move this guest's recordings forward (called by the frontend's polling), then list them."""
+    sweep_stale_uploads(db, guest_id)
+    pipeline.advance_due(db, guest_id)
+    return list_recordings(db, guest_id)
+
+
+def refresh_one(db: Session, rec: Recording) -> Recording:
+    """Move one recording forward if it's due. `rec` is updated in place."""
+    pipeline.advance(db, rec.id)
+    db.refresh(rec)
+    return rec

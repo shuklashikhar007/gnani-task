@@ -45,6 +45,8 @@ uv run fastapi run app/main.py
 
 The server starts on http://localhost:8000.
 
+Transcription needs `ffmpeg` installed and `GNANI_API_KEY` set. It runs inside API requests (no worker): `/complete` starts it, `POST /recordings/refresh` (polled by the web app) advances due work, and `POST /webhooks/gnani/{id}` collects finished batch jobs.
+
 | Variable                                    | Default                                                             | Purpose                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `ENV`                                       | `development`                                                       | `production` marks the `guest_id` cookie as `Secure` (HTTPS only) |
@@ -54,6 +56,12 @@ The server starts on http://localhost:8000.
 | `R2_BUCKET`                                 |                                                                     | Bucket that holds uploaded audio                                  |
 | `MAX_UPLOAD_BYTES`                          | `2147483648` (2 GiB)                                                | Largest file accepted                                             |
 | `UPLOAD_STALE_HOURS`                        | `24`                                                                | Unfinished uploads idle this long are aborted and marked `failed` |
+| `GNANI_API_KEY`                             |                                                                     | Gnani speech-to-text API key                                      |
+| `GNANI_BASE_URL`                            | `https://api.vachana.ai`                                            | Gnani API base URL                                                |
+| `GNANI_MODEL`                               | `gnani-prisma-v2.5`                                                 | Model for batch transcription jobs                                |
+| `SYNC_MAX_SECONDS`                          | `25`                                                                | Audio up to this long uses the quick endpoint; longer uses batch  |
+| `PUBLIC_API_URL`                            |                                                                     | Public API base URL for Gnani's webhook; empty disables it        |
+| `WEBHOOK_SECRET`                            |                                                                     | Random secret that signs webhook URLs                             |
 
 ## Database migrations
 

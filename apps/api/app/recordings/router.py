@@ -12,6 +12,7 @@ from .schemas import (
     PresignedPart,
     PresignPartsIn,
     PresignPartsOut,
+    RecordingDetailOut,
     RecordingOut,
     UploadedPartOut,
     UploadProgressOut,
@@ -30,9 +31,15 @@ def upload_error_handler(_: Request, exc: service.UploadError) -> JSONResponse:
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_recording(body: CreateRecordingIn, db: DbSession, guest_id: GuestId) -> RecordingOut:
     rec = service.create_recording(
-        db, guest_id, body.filename, body.size_bytes, body.content_type, body.last_modified
+        db, guest_id, body.filename, body.size_bytes, body.content_type, body.last_modified, body.language_code
     )
     return RecordingOut.model_validate(rec)
+
+
+@router.post("/refresh")
+def refresh_recordings(db: DbSession, guest_id: GuestId) -> list[RecordingOut]:
+    """List this guest's recordings after advancing any due transcription work (polled by the UI)."""
+    return [RecordingOut.model_validate(r) for r in service.refresh(db, guest_id)]
 
 
 @router.get("")
@@ -41,8 +48,14 @@ def list_recordings(db: DbSession, guest_id: GuestId) -> list[RecordingOut]:
 
 
 @router.get("/{recording_id}")
-def get_recording(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId) -> RecordingOut:
-    return RecordingOut.model_validate(service.get_recording(db, guest_id, recording_id))
+def get_recording(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId) -> RecordingDetailOut:
+    return RecordingDetailOut.model_validate(service.get_recording(db, guest_id, recording_id))
+
+
+@router.post("/{recording_id}/refresh")
+def refresh_recording(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId) -> RecordingDetailOut:
+    rec = service.get_recording(db, guest_id, recording_id)
+    return RecordingDetailOut.model_validate(service.refresh_one(db, rec))
 
 
 @router.post("/{recording_id}/parts")
@@ -71,6 +84,12 @@ def get_uploaded_parts(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId
 def complete_upload(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId) -> RecordingOut:
     rec = service.get_recording(db, guest_id, recording_id)
     return RecordingOut.model_validate(service.complete_upload(db, rec))
+
+
+@router.post("/{recording_id}/retry")
+def retry_transcription(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId) -> RecordingOut:
+    rec = service.get_recording(db, guest_id, recording_id)
+    return RecordingOut.model_validate(service.retry_transcription(db, rec))
 
 
 @router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)

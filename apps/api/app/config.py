@@ -17,6 +17,18 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 2 * 1024**3  # 2 GiB
     upload_stale_hours: int = 24
 
+    gnani_api_key: str = ""
+    gnani_base_url: str = "https://api.vachana.ai"
+    gnani_model: str = "gnani-prisma-v2.5"
+    # Audio up to this long uses Gnani's synchronous endpoint; longer goes to batch. The endpoint rejects
+    # audio over 30 s (MAX_AUDIO_DURATION_EXCEEDED), so stay safely below that.
+    sync_max_seconds: float = 25
+    # Public base URL Gnani can reach for its completion webhook (e.g. https://<app>.vercel.app/api).
+    # Leave empty locally: without it no webhook is registered and polling collects results.
+    public_api_url: str = ""
+    # Random secret used to sign webhook URLs.
+    webhook_secret: str = ""
+
     @property
     def is_prod(self) -> bool:
         return self.env == "production"

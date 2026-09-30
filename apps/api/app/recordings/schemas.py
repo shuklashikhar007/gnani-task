@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .models import RecordingStatus
+from .models import RecordingStatus, TranscriptionMode
 
 
 class RecordingOut(BaseModel):
@@ -21,6 +21,18 @@ class RecordingOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     uploaded_at: datetime | None
+    language_code: str
+    duration_seconds: float | None
+    transcription_mode: TranscriptionMode | None
+    gnani_status: str | None
+    attempts: int
+    processing_started_at: datetime | None
+    transcribed_at: datetime | None
+
+
+class RecordingDetailOut(RecordingOut):
+    transcript: str | None
+    segments: list[dict] | None
 
 
 class CreateRecordingIn(BaseModel):
@@ -28,6 +40,7 @@ class CreateRecordingIn(BaseModel):
     size_bytes: int
     content_type: str = Field(default="", max_length=100)
     last_modified: int = Field(ge=0)
+    language_code: str = Field(default="en-IN", max_length=32)
 
 
 class PresignPartsIn(BaseModel):
