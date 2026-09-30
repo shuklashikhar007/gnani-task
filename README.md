@@ -30,8 +30,9 @@ This starts Postgres at `localhost:5432` with user `postgres`, password `postgre
 
 ```bash
 cd apps/api
-cp .example.env .env
+cp .example.env .env        # then fill in the R2_* values
 uv sync
+uv run alembic upgrade head # create or update the database tables
 uv run fastapi dev app/main.py
 ```
 
@@ -48,13 +49,13 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:3000. The page should show your guest ID.
+Open http://localhost:3000. The page shows your guest ID, an upload area and your past uploads.
 
 ## Useful commands
 
 ```bash
-docker compose down        # stop Postgres (keeps data)
-docker compose down -v     # stop Postgres and delete its data
+docker compose down                                      # stop Postgres (keeps data)
+docker compose down -v                                   # stop Postgres and delete its data
 docker compose exec db psql -U postgres -d audio_notes   # open a SQL shell
 ```
 
