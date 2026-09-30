@@ -13,6 +13,7 @@ Monorepo for the Audio Notes platform.
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for Postgres)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/): `brew install uv`
 - [Node.js](https://nodejs.org/) 20+ and [pnpm](https://pnpm.io/installation)
+- [ffmpeg](https://ffmpeg.org/): `brew install ffmpeg` (the API uses `ffprobe` to measure audio length)
 
 ## Setup
 
@@ -30,7 +31,7 @@ This starts Postgres at `localhost:5432` with user `postgres`, password `postgre
 
 ```bash
 cd apps/api
-cp .example.env .env        # then fill in the R2_* values
+cp .example.env .env
 uv sync
 uv run alembic upgrade head # create or update the database tables
 uv run fastapi dev app/main.py
@@ -48,8 +49,6 @@ cp .example.env .env.local
 pnpm install
 pnpm dev
 ```
-
-Open http://localhost:3000. The page shows your guest ID, an upload area and your past uploads.
 
 ## Useful commands
 
