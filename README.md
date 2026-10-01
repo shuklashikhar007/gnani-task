@@ -50,9 +50,18 @@ pnpm install
 pnpm dev
 ```
 
+## Run everything with Docker
+
+Instead of steps 2 and 3, you can run the API and web app in containers too (it needs `apps/api/.env`):
+
+```bash
+docker compose --profile app up --build
+```
+
 ## Useful commands
 
 ```bash
+docker compose --profile app down                        # stop everything (keeps data)
 docker compose down                                      # stop Postgres (keeps data)
 docker compose down -v                                   # stop Postgres and delete its data
 docker compose exec db psql -U postgres -d audio_notes   # open a SQL shell

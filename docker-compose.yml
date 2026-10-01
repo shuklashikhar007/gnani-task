@@ -1,3 +1,16 @@
+# `docker compose up` starts only Postgres (for running the API and web app locally).
+# `docker compose --profile app up --build` runs the whole stack in containers:
+#   db → migrate (alembic upgrade head, then exits) → api (:8000) → web (:3000)
+# The api/migrate containers read apps/api/.env (R2, Gnani, …); DATABASE_URL is overridden to
+# reach the db container.
+
+x-api-env: &api-env
+  env_file:
+    - path: ./apps/api/.env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-audio_notes}
+
 services:
   db:
     image: postgres:17-alpine
@@ -15,6 +28,55 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  migrate:
+    profiles: [app]
+    image: audio-notes-api
+    build: ./apps/api
+    <<: *api-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    profiles: [app]
+    image: audio-notes-api
+    build: ./apps/api
+    <<: *api-env
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    profiles: [app]
+    image: audio-notes-web
+    build:
+      context: ./apps/web
+      args:
+        # Where the web server forwards /api/* (inside the compose network).
+        API_URL: http://api:8000
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
