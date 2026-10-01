@@ -1,9 +1,16 @@
 // Typed client for the recordings API. Requests go through the Next.js /api rewrite.
 
-export type RecordingStatus = "pending_upload" | "uploaded" | "transcribing" | "transcribed" | "failed";
+export type RecordingStatus =
+    "pending_upload" | "uploaded" | "transcribing" | "transcribed" | "summarizing" | "completed" | "failed";
 
 /** Statuses the recording will still move on from; the UI keeps polling while any are present. */
-export const UNFINISHED_STATUSES: RecordingStatus[] = ["pending_upload", "uploaded", "transcribing"];
+export const UNFINISHED_STATUSES: RecordingStatus[] = [
+    "pending_upload",
+    "uploaded",
+    "transcribing",
+    "transcribed",
+    "summarizing",
+];
 
 export interface Recording {
     id: string;
@@ -27,6 +34,16 @@ export interface Recording {
     attempts: number;
     processing_started_at: string | null;
     transcribed_at: string | null;
+    summarized_at: string | null;
+    /** Long transcripts are summarized in parts: how many are done so far. */
+    summary_progress: { done: number; total: number } | null;
+}
+
+export interface Summary {
+    title: string;
+    overview: string;
+    key_points: string[];
+    action_items: string[];
 }
 
 export interface Segment {
@@ -39,6 +56,7 @@ export interface Segment {
 export interface RecordingDetail extends Recording {
     transcript: string | null;
     segments: Segment[] | null;
+    summary: Summary | null;
 }
 
 export interface PresignedParts {

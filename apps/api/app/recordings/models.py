@@ -13,7 +13,9 @@ class RecordingStatus(enum.StrEnum):
     PENDING_UPLOAD = "pending_upload"
     UPLOADED = "uploaded"
     TRANSCRIBING = "transcribing"
-    TRANSCRIBED = "transcribed"
+    TRANSCRIBED = "transcribed"  # transcript ready; summary queued
+    SUMMARIZING = "summarizing"
+    COMPLETED = "completed"
     FAILED = "failed"
 
 
@@ -77,3 +79,11 @@ class Recording(Base):
     transcript: Mapped[str | None] = mapped_column(Text)
     segments: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
     transcribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # ---- summary (see app/summary) ----
+    # {"title", "overview", "key_points", "action_items"}
+    summary: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    # Long transcripts only: notes per transcript part (null = not done yet), combined at the end.
+    summary_parts: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    summary_model: Mapped[str | None] = mapped_column(String(200))
+    summarized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

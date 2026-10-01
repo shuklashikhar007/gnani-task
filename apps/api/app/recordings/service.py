@@ -212,18 +212,29 @@ def complete_upload(db: Session, rec: Recording) -> Recording:
 
 
 def retry_transcription(db: Session, rec: Recording) -> Recording:
-    """Queue a failed recording for transcription again. Only possible if its file was uploaded."""
+    """Retry a failed recording: just the summary if a transcript exists, otherwise transcription.
+
+    Only possible if its file was uploaded.
+    """
     if rec.status != RecordingStatus.FAILED or rec.uploaded_at is None:
         raise UploadError("Only a failed recording whose upload finished can be retried.", 409)
-    rec.status = RecordingStatus.UPLOADED
     rec.error = None
+    rec.next_poll_at = None
+    rec.attempts = 0
+    rec.locked_until = None
+    if rec.transcript:
+        # Transcription already succeeded; only the summary failed. Redo just that.
+        rec.status = RecordingStatus.TRANSCRIBED
+        rec.summary = None
+        rec.summary_parts = None
+        db.commit()
+        pipeline.advance(db, rec.id)
+        return rec
+    rec.status = RecordingStatus.UPLOADED
     rec.transcription_mode = None
     rec.gnani_job_id = None
     rec.gnani_status = None
     rec.processing_started_at = None
-    rec.next_poll_at = None
-    rec.attempts = 0
-    rec.locked_until = None
     db.commit()
     pipeline.advance(db, rec.id)
     return rec

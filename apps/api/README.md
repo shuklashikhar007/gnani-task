@@ -45,7 +45,9 @@ uv run fastapi run app/main.py
 
 The server starts on http://localhost:8000.
 
-Transcription needs `ffmpeg` installed and `GNANI_API_KEY` set. It runs inside API requests (no worker): `/complete` starts it, `POST /recordings/refresh` (polled by the web app) advances due work, and `POST /webhooks/gnani/{id}` collects finished batch jobs.
+Transcription needs `ffmpeg` installed and `GNANI_API_KEY` set. It runs inside API requests (no worker): `/complete` starts it, `POST /recordings/refresh` (polled by the web app) advances due work, and `POST /webhooks/gnani/{id}` collects finished batch jobs. Once a transcript is ready, the next refresh generates an English summary with an LLM.
+
+Summaries use any OpenAI-compatible Chat Completions API: set `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` for OpenAI, Gemini, Anthropic, Groq, OpenRouter or a local Ollama (see `.example.env` for base URLs).
 
 | Variable                                    | Default                                                             | Purpose                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -62,6 +64,12 @@ Transcription needs `ffmpeg` installed and `GNANI_API_KEY` set. It runs inside A
 | `SYNC_MAX_SECONDS`                          | `25`                                                                | Audio up to this long uses the quick endpoint; longer uses batch  |
 | `PUBLIC_API_URL`                            |                                                                     | Public API base URL for Gnani's webhook; empty disables it        |
 | `WEBHOOK_SECRET`                            |                                                                     | Random secret that signs webhook URLs                             |
+| `LLM_BASE_URL`                              | `https://api.openai.com/v1`                                         | OpenAI-compatible API base URL for summaries                      |
+| `LLM_API_KEY`                               |                                                                     | API key for that provider (not needed for local Ollama)           |
+| `LLM_MODEL`                                 |                                                                     | Model name; summaries are off until this is set                   |
+| `LLM_JSON_MODE`                             | `false`                                                             | Ask for JSON output mode (if the provider supports it)            |
+| `LLM_TIMEOUT_SECONDS`                       | `90`                                                                | Timeout per LLM request                                           |
+| `LLM_CHUNK_CHARS`                           | `24000`                                                             | Longer transcripts are summarized in parts, then combined         |
 
 ## Database migrations
 

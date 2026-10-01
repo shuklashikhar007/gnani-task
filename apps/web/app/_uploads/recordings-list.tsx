@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { isSameFile, type Recording, UNFINISHED_STATUSES } from "@/app/_uploads/api";
-import { audioDetails, canRetry, elapsedText, processingStage } from "@/app/_uploads/processing";
+import {
+    audioDetails,
+    canRetry,
+    elapsedText,
+    hasTranscript,
+    isTicking,
+    processingStage,
+} from "@/app/_uploads/processing";
 import StatusBadge from "@/app/_uploads/status-badge";
 import { activeRecordingId, isUploading, useUploads } from "@/app/_uploads/store";
 import { formatBytes, formatDate } from "@/app/_utils/format";
@@ -20,7 +27,7 @@ export default function RecordingsList() {
     const uploadActive = useUploads(isUploading);
     const { loadRecordings, startUpload, deleteRecording, retryRecording } = useUploads.getState();
     const hasUnfinished = recordings?.some((r) => UNFINISHED_STATUSES.includes(r.status)) ?? false;
-    const now = useNow(recordings?.some((r) => r.status === "transcribing") ?? false);
+    const now = useNow(recordings?.some(isTicking) ?? false);
 
     useEffect(() => {
         void loadRecordings();
@@ -106,9 +113,9 @@ export default function RecordingsList() {
                             {rec.status === "failed" && rec.error && <p className="text-sm text-red-600">{rec.error}</p>}
 
                             <div className="mt-1 flex gap-3 text-sm">
-                                {rec.status === "transcribed" && (
+                                {hasTranscript(rec) && (
                                     <Link href={`/recordings/${rec.id}`} className="font-medium text-blue-700 hover:underline">
-                                        View transcript
+                                        {rec.status === "completed" ? "View summary" : "View transcript"}
                                     </Link>
                                 )}
                                 {canRetry(rec) && (
@@ -117,7 +124,7 @@ export default function RecordingsList() {
                                         onClick={() => void retryRecording(rec)}
                                         className="font-medium text-blue-700 hover:underline"
                                     >
-                                        Retry
+                                        {hasTranscript(rec) ? "Retry summary" : "Retry"}
                                     </button>
                                 )}
                                 {rec.status === "pending_upload" && !isActive && (

@@ -11,7 +11,8 @@ so these triggers can overlap or repeat safely.
 
     uploaded ──start──► transcribing ──(sync)────────────────────────────────────► transcribed
                             └─(batch) job created+started ──poll / webhook ──► transcribed
-    any step ──► failed (with a message the user can act on)
+    transcribed ──summarize (LLM)──► summarizing ──► completed
+    any step ──► failed (with a message the user can act on; a transcript, once made, is kept)
 """
 
 import hashlib
@@ -29,6 +30,8 @@ from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
 from app.config import settings
 from app.recordings import storage
 from app.recordings.models import Recording, RecordingStatus, TranscriptionMode
+
+from app.summary import llm, summarize
 
 from . import gnani
 from .probe import InvalidAudio, probe_duration
@@ -48,6 +51,12 @@ MSG_FETCH_FAILED = "The transcription service couldn't fetch the file. Please re
 MSG_REJECTED = "The transcription service rejected this file. Please retry, or try another format."
 MSG_UNAVAILABLE = "The transcription service is unavailable right now. Please retry later."
 MSG_TOO_LONG = "Transcription took too long and was stopped. Please retry."
+MSG_SUMMARY_NOT_CONFIGURED = "Summaries aren't set up on this server yet. The transcript is ready."
+MSG_SUMMARY_UNAVAILABLE = "The summary service is unavailable right now. Please retry later."
+
+# Long transcripts are summarized part by part; one summary step stops starting new parts after this long
+# (progress is saved after every part, and the next refresh continues).
+SUMMARY_STEP_BUDGET_SECONDS = 20
 
 
 def _now() -> datetime:
@@ -73,6 +82,8 @@ _NEEDS_START = or_(
     and_(Recording.status == RecordingStatus.TRANSCRIBING, Recording.gnani_job_id.is_(None)),
 )
 _NEEDS_POLL = and_(Recording.status == RecordingStatus.TRANSCRIBING, Recording.gnani_job_id.is_not(None))
+# Transcript ready and summary not done yet (or a summary step whose lease expired).
+_NEEDS_SUMMARY = Recording.status.in_([RecordingStatus.TRANSCRIBED, RecordingStatus.SUMMARIZING])
 
 
 # ---- entry points ----
@@ -81,7 +92,7 @@ _NEEDS_POLL = and_(Recording.status == RecordingStatus.TRANSCRIBING, Recording.g
 def _claim(db: Session, rec_id: uuid.UUID, *, ignore_schedule: bool) -> Recording | None:
     """Lock one row, take a lease on it and commit. None if it's busy, not due, or has nothing to do."""
     now = _now()
-    conditions = [Recording.id == rec_id, or_(_NEEDS_START, _NEEDS_POLL), _lease_free(now)]
+    conditions = [Recording.id == rec_id, or_(_NEEDS_START, _NEEDS_POLL, _NEEDS_SUMMARY), _lease_free(now)]
     if not ignore_schedule:
         conditions.append(_due(now))
     stmt = (
@@ -108,7 +119,11 @@ def advance(db: Session, rec_id: uuid.UUID, *, ignore_schedule: bool = False) ->
     rec = _claim(db, rec_id, ignore_schedule=ignore_schedule)
     if rec is None:
         return False
-    _run(db, rec, _poll if rec.gnani_job_id else _start)
+    if rec.status in (RecordingStatus.TRANSCRIBED, RecordingStatus.SUMMARIZING):
+        step = _summarize
+    else:
+        step = _poll if rec.gnani_job_id else _start
+    _run(db, rec, step)
     return True
 
 
@@ -116,14 +131,15 @@ def advance_due(db: Session, guest_id: str, *, max_rows: int = 5, budget_seconds
     """Advance this guest's due recordings, doing a bounded amount of work. Returns how many ran."""
     now = _now()
     owned = [Recording.guest_id == uuid.UUID(guest_id), _lease_free(now), _due(now)]
-    # Batch polls first: they're one quick request each. Starts may transcribe quick audio inline.
+    # Batch polls first (one quick request each), then summaries, then starts (which may transcribe inline).
     polls = db.scalars(select(Recording.id).where(*owned, _NEEDS_POLL).order_by(Recording.next_poll_at)).all()
+    summaries = db.scalars(select(Recording.id).where(*owned, _NEEDS_SUMMARY).order_by(Recording.updated_at)).all()
     starts = db.scalars(select(Recording.id).where(*owned, _NEEDS_START).order_by(Recording.updated_at)).all()
     db.rollback()
 
     deadline = time.monotonic() + budget_seconds
     ran = 0
-    for rec_id in [*polls, *starts]:
+    for rec_id in [*polls, *summaries, *starts]:
         if ran >= max_rows or time.monotonic() > deadline:
             break
         ran += advance(db, rec_id)
@@ -268,6 +284,58 @@ def _file_error_message(file: dict) -> str:
     return f"Transcription failed: {file.get('error_message') or file.get('status', 'unknown error')}."
 
 
+def _summarize(db: Session, rec: Recording) -> None:
+    if not llm.is_configured():
+        _fail(db, rec, MSG_SUMMARY_NOT_CONFIGURED)
+        return
+
+    chunks = summarize.split_transcript(rec.transcript or "", settings.llm_chunk_chars)
+    if not chunks:
+        _fail(db, rec, MSG_NO_SPEECH)
+        return
+    if rec.status == RecordingStatus.TRANSCRIBED:
+        rec.status = RecordingStatus.SUMMARIZING
+        rec.attempts = 0
+        rec.summary_parts = [None] * len(chunks) if len(chunks) > 1 else None
+        db.commit()
+
+    if len(chunks) == 1:
+        reply = llm.chat(summarize.summary_messages(chunks[0]), json_mode=True)
+    else:
+        # Map: notes for each part, saved one by one so progress survives crashes and shows in the UI.
+        parts = list(rec.summary_parts or [])
+        if len(parts) != len(chunks):  # first run, or the chunk size setting changed
+            parts = [None] * len(chunks)
+        deadline = time.monotonic() + SUMMARY_STEP_BUDGET_SECONDS
+        done_this_step = 0
+        for i, chunk in enumerate(chunks):
+            if parts[i] is not None:
+                continue
+            # Always make progress (at least one part per step), then stop once the budget is spent.
+            if done_this_step and time.monotonic() > deadline:
+                rec.next_poll_at = _now()  # due again right away; the next refresh continues
+                db.commit()
+                return
+            parts[i] = llm.chat(summarize.part_notes_messages(chunk, i + 1, len(chunks)))
+            rec.summary_parts = list(parts)  # assign a new list so the JSON column is saved
+            db.commit()
+            done_this_step += 1
+        # Reduce: one summary from all the notes.
+        reply = llm.chat(summarize.combine_messages(parts), json_mode=True)
+
+    result = summarize.parse_summary(reply)
+    rec.summary = result.model_dump()
+    rec.summary_model = settings.llm_model
+    rec.summarized_at = _now()
+    rec.summary_parts = None
+    rec.status = RecordingStatus.COMPLETED
+    rec.error = None
+    rec.attempts = 0
+    rec.next_poll_at = None
+    rec.locked_until = None
+    db.commit()
+
+
 def _timed_out(rec: Recording) -> bool:
     if rec.processing_started_at is None:
         return False
@@ -304,7 +372,8 @@ def _retry_later(db: Session, rec: Recording, reason: str) -> None:
     rec.attempts += 1
     if rec.attempts >= MAX_ATTEMPTS:
         log.warning("Recording %s: giving up after %d attempts: %s", rec.id, rec.attempts, reason)
-        _fail(db, rec, MSG_UNAVAILABLE)
+        summarizing = rec.status in (RecordingStatus.TRANSCRIBED, RecordingStatus.SUMMARIZING)
+        _fail(db, rec, MSG_SUMMARY_UNAVAILABLE if summarizing else MSG_UNAVAILABLE)
         return
     delay = min(timedelta(seconds=10 * 2**rec.attempts), timedelta(minutes=5))
     log.warning("Recording %s: attempt %d failed (%s); retrying in %s", rec.id, rec.attempts, reason, delay)
@@ -336,6 +405,18 @@ def _run(db: Session, rec: Recording, step: Callable[[Session, Recording], None]
             else:
                 log.warning("Recording %s: %s", rec.id, exc.message)
                 _fail(db, rec, MSG_REJECTED)
+            return
+        except llm.LLMError as exc:
+            db.rollback()
+            if exc.retryable:
+                _retry_later(db, rec, exc.message)
+            else:
+                log.warning("Recording %s: summary failed: %s", rec.id, exc.message)
+                _fail(db, rec, f"Couldn't generate a summary ({exc.message[:120]}). The transcript is ready.")
+            return
+        except summarize.InvalidSummary as exc:
+            db.rollback()
+            _retry_later(db, rec, f"invalid summary JSON: {exc}")
             return
         except (StaleDataError, ObjectDeletedError):
             raise

@@ -14,6 +14,12 @@ const GNANI_STAGES: Record<string, string> = {
 /** What the worker is doing with this recording right now, or null once it's finished. */
 export function processingStage(rec: Recording): string | null {
     if (rec.status === "uploaded") return "Waiting to be transcribed…";
+    if (rec.status === "transcribed") return "Transcript ready. Summarizing next...";
+    if (rec.status === "summarizing") {
+        if (rec.attempts > 0) return "The summary service had a problem. Retrying automatically...";
+        const p = rec.summary_progress;
+        return p ? `Summarizing part ${Math.min(p.done + 1, p.total)} of ${p.total}...` : "Summarizing...";
+    }
     if (rec.status !== "transcribing") return null;
     if (rec.attempts > 0) return "The transcription service had a problem. Retrying automatically…";
     if (!rec.transcription_mode) return "Checking the audio…";
@@ -21,9 +27,15 @@ export function processingStage(rec: Recording): string | null {
     return GNANI_STAGES[rec.gnani_status ?? ""] ?? "Transcribing…";
 }
 
-/** "3m 20s elapsed" while processing. */
+/** True while transcription or the summary is running, i.e. while an elapsed-time clock is shown. */
+export function isTicking(rec: Recording): boolean {
+    const active = rec.status === "transcribing" || rec.status === "transcribed" || rec.status === "summarizing";
+    return active && rec.processing_started_at !== null;
+}
+
+/** "3m 20s elapsed" while processing (counted from when transcription started). */
 export function elapsedText(rec: Recording, now: number): string | null {
-    if (rec.status !== "transcribing" || !rec.processing_started_at) return null;
+    if (!isTicking(rec) || !rec.processing_started_at) return null;
     return `${formatDuration((now - Date.parse(rec.processing_started_at)) / 1000)} elapsed`;
 }
 
@@ -37,3 +49,10 @@ export function audioDetails(rec: Recording): string {
 
 /** A failed recording can be retried only if its file finished uploading. */
 export const canRetry = (rec: Recording) => rec.status === "failed" && rec.uploaded_at !== null;
+
+/** The transcript exists from "transcribed" on (and stays if only the summary failed). */
+export const hasTranscript = (rec: Recording) =>
+    rec.status === "transcribed" ||
+    rec.status === "summarizing" ||
+    rec.status === "completed" ||
+    (rec.status === "failed" && rec.transcribed_at !== null);

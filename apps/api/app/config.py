@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # Random secret used to sign webhook URLs.
     webhook_secret: str = ""
 
+    # Summaries: any OpenAI-compatible Chat Completions API (OpenAI, Gemini, Anthropic, Groq, OpenRouter, Ollama…).
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str = ""
+    llm_model: str = ""
+    # Send response_format={"type": "json_object"} (only for providers/models that support it).
+    llm_json_mode: bool = False
+    llm_timeout_seconds: float = 90
+    # Transcripts longer than this (in characters, ~4 per token) are summarized in parts, then combined.
+    llm_chunk_chars: int = 24000
+
     @property
     def is_prod(self) -> bool:
         return self.env == "production"

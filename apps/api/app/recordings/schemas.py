@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from .models import RecordingStatus, TranscriptionMode
 
@@ -28,11 +28,30 @@ class RecordingOut(BaseModel):
     attempts: int
     processing_started_at: datetime | None
     transcribed_at: datetime | None
+    summarized_at: datetime | None
+    # Only needed to compute summary_progress; not sent.
+    summary_parts: list | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def summary_progress(self) -> dict | None:
+        """{"done": 2, "total": 5} while a long transcript is summarized part by part."""
+        if not self.summary_parts:
+            return None
+        return {"done": sum(p is not None for p in self.summary_parts), "total": len(self.summary_parts)}
+
+
+class SummaryOut(BaseModel):
+    title: str
+    overview: str
+    key_points: list[str]
+    action_items: list[str]
 
 
 class RecordingDetailOut(RecordingOut):
     transcript: str | None
     segments: list[dict] | None
+    summary: SummaryOut | None
 
 
 class CreateRecordingIn(BaseModel):
