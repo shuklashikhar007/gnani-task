@@ -1,15 +1,16 @@
 # `docker compose up` starts only Postgres (for running the API and web app locally).
 # `docker compose --profile app up --build` runs the whole stack in containers:
 #   db → migrate (alembic upgrade head, then exits) → api (:8000) → web (:3000)
-# The api/migrate containers read apps/api/.env (R2, Gnani, …); DATABASE_URL is overridden to
-# reach the db container.
+# The api/migrate containers read apps/api/.env (R2, Gnani, LLM, …). If DATABASE_URL is set there (e.g. Supabase),
+# it is used; otherwise they use the db container below (DEFAULT_DATABASE_URL).
 
 x-api-env: &api-env
   env_file:
     - path: ./apps/api/.env
       required: false
   environment:
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-audio_notes}
+    # Only a fallback: an explicit DATABASE_URL in apps/api/.env takes priority.
+    DEFAULT_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-audio_notes}
 
 services:
   db:

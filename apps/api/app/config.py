@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,7 +8,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     env: str = "development"
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/audio_notes"
+    # DATABASE_URL, when set (in .env or the environment), is always used, e.g. a Supabase URL.
+    database_url_override: str = Field(default="", validation_alias="DATABASE_URL")
+    # Used when DATABASE_URL isn't set: the docker-compose Postgres. Locally that's localhost; docker-compose
+    # sets DEFAULT_DATABASE_URL to the `db` container for the api/migrate containers.
+    default_database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/audio_notes"
 
     r2_account_id: str = ""
     r2_access_key_id: str = ""
@@ -38,6 +43,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 90
     # Transcripts longer than this (in characters, ~4 per token) are summarized in parts, then combined.
     llm_chunk_chars: int = 24000
+
+    @property
+    def database_url(self) -> str:
+        return self.database_url_override or self.default_database_url
 
     @property
     def is_prod(self) -> bool:

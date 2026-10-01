@@ -52,7 +52,7 @@ Summaries use any OpenAI-compatible Chat Completions API: set `LLM_BASE_URL`, `L
 | Variable                                    | Default                                                             | Purpose                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `ENV`                                       | `development`                                                       | `production` marks the `guest_id` cookie as `Secure` (HTTPS only) |
-| `DATABASE_URL`                              | `postgresql+psycopg://postgres:postgres@localhost:5432/audio_notes` | Postgres connection (SQLAlchemy + psycopg 3)                      |
+| `DATABASE_URL`                              | the docker-compose Postgres (`localhost:5432`)                      | Postgres connection; when set (e.g. Supabase) it's always used    |
 | `R2_ACCOUNT_ID`                             |                                                                     | Cloudflare account ID                                             |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` |                                                                     | R2 API token with Object Read & Write                             |
 | `R2_BUCKET`                                 |                                                                     | Bucket that holds uploaded audio                                  |
