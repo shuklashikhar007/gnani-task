@@ -1,4 +1,5 @@
-// app/architecture/page.jsx  (Next.js App Router, server component, no extra deps)
+// app/architecture/page.tsx  (Next.js App Router, server component, no extra deps)
+import type { CSSProperties } from "react";
 import { Bricolage_Grotesque, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 
 const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -95,7 +96,7 @@ const ROUTE_GROUPS = [
 /* SVG building blocks                                                 */
 /* ------------------------------------------------------------------ */
 
-function Defs({ id }) {
+function Defs({ id }: { id: string }) {
   return (
     <defs>
       <marker id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -105,7 +106,18 @@ function Defs({ id }) {
   );
 }
 
-function Node({ x, y, w, h, title, sub, tone, pill }) {
+type NodeProps = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title: string;
+  sub?: string;
+  tone: string;
+  pill?: boolean;
+};
+
+function Node({ x, y, w, h, title, sub, tone, pill }: NodeProps) {
   const cy = y + h / 2;
   return (
     <g className={`node t-${tone}`}>
@@ -118,7 +130,18 @@ function Node({ x, y, w, h, title, sub, tone, pill }) {
   );
 }
 
-function Edge({ d, marker, dash, both, label, lx, ly, anchor = "middle" }) {
+type EdgeProps = {
+  d: string;
+  marker: string;
+  dash?: boolean;
+  both?: boolean;
+  label?: string;
+  lx?: number;
+  ly?: number;
+  anchor?: "start" | "middle" | "end";
+};
+
+function Edge({ d, marker, dash, both, label, lx, ly, anchor = "middle" }: EdgeProps) {
   return (
     <g>
       <path
@@ -134,7 +157,7 @@ function Edge({ d, marker, dash, both, label, lx, ly, anchor = "middle" }) {
   );
 }
 
-function Lane({ x, y, w, h, title, tone }) {
+function Lane({ x, y, w, h, title, tone }: { x: number; y: number; w: number; h: number; title: string; tone: string }) {
   return (
     <g className={`t-${tone}`}>
       <rect x={x} y={y} width={w} height={h} rx={18} className="lane" />
@@ -284,10 +307,10 @@ export default function ArchitecturePage() {
               <div className="chunk" key={c}>
                 <div className="chunk-bars">
                   {bars.map((h, b) => (
-                    <span key={b} className="bar" style={{ "--h": `${h}px`, "--i": c * BARS + b }} />
+                    <span key={b} className="bar" style={{ "--h": `${h}px`, "--i": c * BARS + b } as CSSProperties} />
                   ))}
                 </div>
-                <div className="chunk-label" style={{ "--c": c }}>
+                <div className="chunk-label" style={{ "--c": c } as CSSProperties}>
                   <span>part {c + 1}</span>
                 </div>
               </div>
