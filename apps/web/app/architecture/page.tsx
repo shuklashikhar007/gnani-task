@@ -425,7 +425,7 @@ export default function ArchitecturePage() {
         </p>
 
         <a
-          href="https://github.com/your-username/your-repository"
+          href="https://github.com/shuklashikhar007/gnani-task"
           target="_blank"
           rel="noopener noreferrer"
           style={{
