@@ -1,5 +1,6 @@
 """Thin wrapper around Cloudflare R2 (S3-compatible). The only module that talks to boto3."""
-
+# this false contains all the code related to cloudflare r2 storage service 
+# the storage using chunking is also implemented in this file itself here 
 from dataclasses import dataclass
 from functools import cache
 

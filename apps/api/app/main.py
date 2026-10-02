@@ -12,15 +12,14 @@ app.include_router(guest.router)
 app.include_router(recordings.router)
 app.include_router(webhook.router)
 
-
 @app.get("/")
 def hello():
     return {"message": "Hello World"}
 
-
 @app.get("/health")
 def health(db: DbSession):
     try:
+        # execute a sample SQL query if the DB is up tabhi reponse ok ayega else 503 error.
         db.execute(text("SELECT 1"))
     except OperationalError:
         raise HTTPException(status_code=503, detail="database unavailable")

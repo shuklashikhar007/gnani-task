@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 
 def get_db() -> Iterator[Session]:
     with SessionLocal() as session:
-        yield session
+        yield session # create a session and then usko yield karege to use this session in other parts of the code
 
-
+# this variable when imported in any file will import Session and get_db function 
 DbSession = Annotated[Session, Depends(get_db)]

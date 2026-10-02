@@ -68,13 +68,16 @@ def create_recording(
     ext = PurePath(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         allowed = ", ".join(sorted(e.lstrip(".") for e in ALLOWED_EXTENSIONS))
+        # if ext allowed wale ex mai nahi hai then we will raise error and return the allowed extensions.
         raise UploadError(f"Unsupported file type. Allowed: {allowed}.")
     if size_bytes <= 0:
+        # no file is uploaded
         raise UploadError("The file is empty.")
+        # ek aur possible error ki size bahut bada hai file ka 
     if size_bytes > settings.max_upload_bytes:
         raise UploadError(f"The file is too large. The limit is {settings.max_upload_bytes // MIB} MB.", 413)
     content_type = _resolve_content_type(ext, content_type)
-
+    # ek uuid generate karege to give this audio ek unique id database mai store karne ke liye
     rec_id = uuid.uuid4()
     part_size = compute_part_size(size_bytes)
     rec = Recording(
@@ -87,6 +90,8 @@ def create_recording(
         storage_key=f"recordings/{guest_id}/{rec_id}{ext}",
         part_size=part_size,
         part_count=math.ceil(size_bytes / part_size),
+        # initially database mai pending status ke sath upload hogi recording 
+        # uske baad jab transcription pura hoga sahi se then recording ka status accordingly change karege 
         status=RecordingStatus.PENDING_UPLOAD,
         language_code=language_code,
     )
@@ -98,6 +103,7 @@ def create_recording(
 
 def list_recordings(db: Session, guest_id: str) -> list[Recording]:
     stmt = (
+        # load all the recordings created by the current user and sort them by creation date 
         select(Recording)
         .where(Recording.guest_id == uuid.UUID(guest_id))
         .order_by(Recording.created_at.desc())
@@ -111,14 +117,14 @@ def get_recording(db: Session, guest_id: str, recording_id: uuid.UUID) -> Record
         raise UploadError("Recording not found.", 404)
     return rec
 
-
+# to handle the case suppose we ask for the transcript ya fir summary mang li but file is still being uploaded
 def _require_pending(rec: Recording) -> str:
     if rec.status != RecordingStatus.PENDING_UPLOAD or not rec.upload_id:
         raise UploadError(f"This recording is not accepting uploads (status: {rec.status}).", 409)
     return rec.upload_id
 
-
 def presign_parts(db: Session, rec: Recording, part_numbers: list[int]) -> list[tuple[int, str]]:
+    # this function created a list of each part number of a recording and its presigned url to handle large file uploads
     upload_id = _require_pending(rec)
     bad = [n for n in part_numbers if not 1 <= n <= rec.part_count]
     if bad:

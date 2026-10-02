@@ -57,7 +57,7 @@ def refresh_recording(recording_id: uuid.UUID, db: DbSession, guest_id: GuestId)
     rec = service.get_recording(db, guest_id, recording_id)
     return RecordingDetailOut.model_validate(service.refresh_one(db, rec))
 
-
+# not able to get a res from postman on the routes below this comment 
 @router.post("/{recording_id}/parts")
 def presign_parts(
     recording_id: uuid.UUID, body: PresignPartsIn, db: DbSession, guest_id: GuestId
